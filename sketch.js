@@ -43,7 +43,7 @@ const STATES = {
 
 const LEAD_STORAGE_KEY = "leadData";
 const SWIPE_THRESHOLD = WIDTH * 0.25;
-const DEFAULT_LEVEL_TIMER = 45;
+const DEFAULT_LEVEL_TIMER = 20;
 const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbzlK0quklwpJsXgjsAi76Sb67ZLTaMe6UdryKCfXTuuJ8-eWMGe3OfHAYRxFUZaZHc-/exec";
 
 /* ---------- Assets ---------- */
