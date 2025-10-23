@@ -45,7 +45,7 @@ const LEAD_STORAGE_KEY = "leadData";
 let SWIPE_THRESHOLD = WIDTH * 0.25; // ← ahora let
 
 const DEFAULT_LEVEL_TIMER = 45;
-const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbzlK0quklwpJsXgjsAi76Sb67ZLTaMe6UdryKCfXTuuJ8-eWMGe3OfHAYRxFUZaZHc-/exec";
+const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbxpXnSFkcDYbYwO_G6oyQ_VuNDblib0ugUfEbDY5fKDBtZ4eM4OSdeybWugdtxPUzq9/exec";
 
 /* ---------- Assets ---------- */
 let canvas;
