@@ -22,8 +22,6 @@ let deck = [];
 let currentCardIndex = 0;
 let activeCard = null;
 let lauraMatched = false;
-let pendingStateChange = null;
-
 let matchSwipeActive = false;
 let matchSwipeStartX = 0;
 
@@ -118,7 +116,6 @@ function startPlay1() {
   deck = [initialProfiles[0], initialProfiles[1], initialProfiles[2]];
   currentCardIndex = 0;
   activeCard = new Card(deck[currentCardIndex]);
-  pendingStateChange = null;
 }
 
 function startPlay2() {
@@ -126,10 +123,10 @@ function startPlay2() {
   deck = [initialProfiles[0], initialProfiles[1]];
   currentCardIndex = 0;
   activeCard = new Card(deck[currentCardIndex]);
-  pendingStateChange = null;
 }
 
 function enterMatch() {
+  console.log("Entrando a MATCH");
   currentState = STATES.MATCH;
   activeCard = null;
   matchSwipeActive = false;
@@ -137,16 +134,12 @@ function enterMatch() {
 }
 
 function exitMatch() {
+  console.log("Saliendo de MATCH → PLAY2");
   lauraMatched = true;
   startPlay2();
 }
 
 function handleFinishedCard() {
-  if (pendingStateChange === STATES.MATCH) {
-    pendingStateChange = null;
-    enterMatch();
-    return;
-  }
   if (currentState === STATES.PLAY1 || currentState === STATES.PLAY2) {
     advanceToNextCard();
   }
@@ -216,10 +209,21 @@ function handlePointerUp(x, y) {
   }
 
   if ((currentState === STATES.PLAY1 || currentState === STATES.PLAY2) && activeCard) {
-    const outcome = activeCard.release();
-    if (outcome === "like" && currentState === STATES.PLAY1 && !lauraMatched && isLauraCard(activeCard.data)) {
-      pendingStateChange = STATES.MATCH;
+    const outcome = activeCard.computeOutcome();
+    if (outcome === "like") {
+      console.log("LIKE en", activeCard?.data?.name, "state:", currentState);
     }
+    if (
+      outcome === "like" &&
+      currentState === STATES.PLAY1 &&
+      !lauraMatched &&
+      isLauraCard(activeCard.data)
+    ) {
+      activeCard.cancelForImmediateMatch();
+      enterMatch();
+      return;
+    }
+    activeCard.release(outcome);
   }
 }
 
@@ -320,21 +324,40 @@ class Card {
     this.rotation = constrain(dx / (WIDTH * 0.9), -0.3, 0.3);
   }
 
-  release() {
-    if (!this.dragging) return "none";
+  release(forcedOutcome = null) {
+    if (!this.dragging) {
+      return forcedOutcome || "none";
+    }
     this.dragging = false;
-    const dx = this.x - this.homeX;
-    const threshold = WIDTH * 0.25;
-    if (dx > threshold) {
+    const outcome = forcedOutcome || this.computeOutcome();
+    if (outcome === "like") {
       this.startFlyOut("right");
       return "like";
     }
-    if (dx < -threshold) {
+    if (outcome === "dislike") {
       this.startFlyOut("left");
       return "dislike";
     }
     this.startReturn();
     return "none";
+  }
+
+  computeOutcome() {
+    const dx = this.x - this.homeX;
+    const threshold = WIDTH * 0.25;
+    if (dx > threshold) return "like";
+    if (dx < -threshold) return "dislike";
+    return "none";
+  }
+
+  cancelForImmediateMatch() {
+    this.dragging = false;
+    this.flying = false;
+    this.returning = false;
+    this.done = true;
+    this.x = this.homeX;
+    this.y = this.homeY;
+    this.rotation = 0;
   }
 
   startReturn() {
