@@ -61,7 +61,7 @@
 
   const q = new URLSearchParams(location.search);
   const ret = q.get("return") || sessionStorage.getItem("postReturnTarget") || (location.origin + "/");
-  const STORAGE_KEY = "leadgenData";
+const STORAGE_KEY = "leadData";;
   const form = document.getElementById("leadForm");
   const first = document.getElementById("first");
   const last  = document.getElementById("last");
@@ -113,7 +113,17 @@
     };
 
     // Guardar localmente
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, ts: Date.now() })); } catch {}
+    try { localStorage.setItem(
+  STORAGE_KEY,
+  JSON.stringify({
+    firstName: first.value.trim(),
+    lastName:  last.value.trim(),
+    email:     email.value.trim(),
+    phone:     "", // si no pedís teléfono en el form, dejalo vacío
+    ts:        Date.now()
+  })
+);
+ } catch {}
 
     const result = await sendLead(payload);
 
