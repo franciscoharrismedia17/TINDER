@@ -229,6 +229,7 @@ function setup() {
   pixelDensity(1);
   canvas = createCanvas(WIDTH, HEIGHT);
   canvas.parent("app");
+  canvas.elt.addEventListener("touchcancel", onTouchCancel, { passive:false });
   imageMode(CENTER);
   noStroke();
   fitCanvasCSS();
@@ -757,9 +758,53 @@ function handlePointerUp(x, y){
 function mousePressed(e){ if (touchInProgress) return false; const p=getCanvasCoords(e.clientX,e.clientY); handlePointerDown(p.x,p.y); return false; }
 function mouseDragged(e){ if (touchInProgress) return false; const p=getCanvasCoords(e.clientX,e.clientY); handlePointerMove(p.x,p.y); return false; }
 function mouseReleased(e){ if (touchInProgress) return false; const p=getCanvasCoords(e.clientX,e.clientY); handlePointerUp(p.x,p.y); return false; }
-function touchStarted(){ if (!touches.length) return false; touchInProgress=true; const t=touches[0]; const p=getCanvasCoords(t.clientX,t.clientY); handlePointerDown(p.x,p.y); return false; }
-function touchMoved(){ if (!touches.length) return false; const t=touches[0]; const p=getCanvasCoords(t.clientX,t.clientY); handlePointerMove(p.x,p.y); return false; }
-function touchEnded(){ const t=touches.length?touches[0]:null; if (t){ const p=getCanvasCoords(t.clientX,t.clientY); handlePointerUp(p.x,p.y); } else { handlePointerUp(lastPointerX,lastPointerY); } touchInProgress=touches.length>0; return false; }
+function touchStarted(e){
+  const fallback = (typeof touches !== "undefined" && Array.isArray(touches) && touches.length) ? touches : null;
+  const list = (e && e.touches && e.touches.length) ? e.touches : fallback;
+  if (!list || !list.length) return false;
+  touchInProgress = true;
+  const t = list[0];
+  const p = getCanvasCoords(t.clientX, t.clientY);
+  handlePointerDown(p.x, p.y);
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  return false;
+}
+function touchMoved(e){
+  const fallback = (typeof touches !== "undefined" && Array.isArray(touches) && touches.length) ? touches : null;
+  const list = (e && e.touches && e.touches.length) ? e.touches : fallback;
+  if (!list || !list.length) return false;
+  const t = list[0];
+  const p = getCanvasCoords(t.clientX, t.clientY);
+  handlePointerMove(p.x, p.y);
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  return false;
+}
+function touchEnded(e){
+  const fallback = (typeof touches !== "undefined" && Array.isArray(touches) && touches.length) ? touches : null;
+  const list = (e && e.changedTouches && e.changedTouches.length) ? e.changedTouches : fallback;
+  const t = list && list.length ? list[0] : null;
+  if (t){
+    const p = getCanvasCoords(t.clientX, t.clientY);
+    handlePointerUp(p.x, p.y);
+  } else {
+    handlePointerUp(lastPointerX, lastPointerY);
+  }
+  touchInProgress = (typeof touches !== "undefined" && Array.isArray(touches) && touches.length > 0);
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  return false;
+}
+function onTouchCancel(e){
+  const list = (e && e.changedTouches && e.changedTouches.length) ? e.changedTouches : null;
+  const t = list && list.length ? list[0] : null;
+  if (t){
+    const p = getCanvasCoords(t.clientX, t.clientY);
+    handlePointerUp(p.x, p.y);
+  } else {
+    handlePointerUp(lastPointerX, lastPointerY);
+  }
+  touchInProgress = false;
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+}
 
 function getCanvasCoords(clientX, clientY){
   const r = canvas.elt.getBoundingClientRect();
