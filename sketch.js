@@ -1,316 +1,417 @@
-// ====== RESOLUCIÓN INTERNA (portrait) ======
-const WIDTH = 1080, HEIGHT = 1920;
+const WIDTH = 1080;
+const HEIGHT = 1920;
 
-// ====== ESTADOS ======
-const STATES = { BEGIN: "BEGIN", PLAY1: "PLAY1", MATCH: "MATCH", PLAY2: "PLAY2" };
-let state = STATES.BEGIN; // inicio
+const STATES = {
+  BEGIN: "BEGIN",
+  PLAY1: "PLAY1",
+  MATCH: "MATCH",
+  PLAY2: "PLAY2"
+};
 
-// ====== IMÁGENES ======
-let beginImg, matchImg, imgAnne, imgEmily, imgLauren;
+let currentState = STATES.BEGIN;
 
-// ====== DECK ======
-let profiles = [];      // [{name,img,isLaura}]
-let cards = [];         // [Card]
-let currentIndex = 0;
-let lauraMatched = false; // Lauren sólo una vez
+let canvas;
+let imgBegin;
+let imgAnne;
+let imgEmily;
+let imgLauren;
+let imgMatch;
 
-// ====== ESCALADO CSS / COORDS ======
-let _cnv;
-function fitCanvasCSS(){
-  if(!_cnv) return;
-  const vw = innerWidth, vh = innerHeight;
-  const s = Math.min(vw/WIDTH, vh/HEIGHT);
-  const st = _cnv.elt.style;
-  st.width  = (WIDTH*s)  + "px";
-  st.height = (HEIGHT*s) + "px";
-}
-function toCanvas(clientX,clientY){
-  const r = _cnv.elt.getBoundingClientRect();
-  return { x:(clientX-r.left)*(WIDTH/r.width), y:(clientY-r.top)*(HEIGHT/r.height) };
-}
+let initialProfiles = [];
+let deck = [];
+let currentCardIndex = 0;
+let activeCard = null;
+let lauraMatched = false;
+let pendingStateChange = null;
 
-// ====== MATCH: swipe-right para cerrar ======
-let matchSwipeX0 = null;
+let matchSwipeActive = false;
+let matchSwipeStartX = 0;
 
-// ====== p5 ======
-function preload(){
-  beginImg  = loadImage("BEGIN.png");
-  matchImg  = loadImage("match_n1_1.png", 
-  () => console.log("MATCH cargó"),
-  (e) => console.error("MATCH no cargó", e)
-);
-  imgAnne   = loadImage("Anne.png");
-  imgEmily  = loadImage("Emily.png");
-  imgLauren = loadImage("LAUREN.png"); // nombre exacto
+let lastPointerX = WIDTH / 2;
+let lastPointerY = HEIGHT / 2;
+let touchInProgress = false;
+
+function preload() {
+  imgBegin = loadImage("BEGIN.png");
+  imgAnne = loadImage("Anne.png");
+  imgEmily = loadImage("Emily.png");
+  imgLauren = loadImage("LAUREN.png");
+  imgMatch = loadImage("match_n1_1.png");
 }
 
-function setup(){
-  _cnv = createCanvas(WIDTH, HEIGHT);
-  _cnv.parent(document.getElementById("app"));
+function setup() {
   pixelDensity(1);
+  canvas = createCanvas(WIDTH, HEIGHT);
+  canvas.parent("app");
+  imageMode(CENTER);
+  textFont("Helvetica Neue, Arial, sans-serif");
+  textSize(36);
+  noStroke();
   fitCanvasCSS();
 
-  // Orden fijo garantizado: Anne → Emily → Lauren
-  profiles = [
-    { name:"Anne",   img: imgAnne,   isLaura:false },
-    { name:"Emily",  img: imgEmily,  isLaura:false },
-    { name:"Lauren", img: imgLauren, isLaura:true  } // ← like aquí => MATCH
+  initialProfiles = [
+    { name: "Anne", img: imgAnne, isLaura: false },
+    { name: "Emily", img: imgEmily, isLaura: false },
+    { name: "Lauren", img: imgLauren, isLaura: true }
   ];
-  rebuild();
-}
-function windowResized(){ fitCanvasCSS(); }
-
-function rebuild(){
-  cards = profiles.map(p => new Card(p));
-  currentIndex = 0;
 }
 
-function draw(){
-  background(0);
+function windowResized() {
+  fitCanvasCSS();
+}
 
-  if (state === STATES.BEGIN) {
-    drawImageCover(beginImg, WIDTH/2, HEIGHT/2, WIDTH, HEIGHT);
-    return;
+function fitCanvasCSS() {
+  if (!canvas) return;
+  const scale = Math.min(windowWidth / WIDTH, windowHeight / HEIGHT);
+  const styledWidth = `${WIDTH * scale}px`;
+  const styledHeight = `${HEIGHT * scale}px`;
+  const element = canvas.elt;
+  element.style.width = styledWidth;
+  element.style.height = styledHeight;
+  const container = document.getElementById("app");
+  if (container) {
+    container.style.width = styledWidth;
+    container.style.height = styledHeight;
   }
+}
 
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) {
-    if (cards.length === 0) {
-      // seguridad: reponer (Lauren ya no vuelve en PLAY2)
-      profiles = [
-        { name:"Anne",  img: imgAnne,  isLaura:false },
-        { name:"Emily", img: imgEmily, isLaura:false }
-      ];
-      rebuild();
+function draw() {
+  background(0);
+  noTint();
+
+  if (currentState === STATES.BEGIN) {
+    drawImageCover(imgBegin, WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT);
+  } else if (currentState === STATES.PLAY1 || currentState === STATES.PLAY2) {
+    if (activeCard) {
+      activeCard.update();
+      activeCard.draw();
+      if (activeCard.isFinished()) {
+        activeCard = null;
+        handleFinishedCard();
+      }
     }
-    if (currentIndex >= cards.length) currentIndex = 0; // loop
-    cards[currentIndex].draw();
-    return;
-  }
-
-if (state === STATES.MATCH) {
-  background(0);
-  if (matchImg && matchImg.width > 0 && matchImg.height > 0) {
-    push();
-    resetMatrix();      // limpia cualquier transform previa
+  } else if (currentState === STATES.MATCH) {
+    resetMatrix();
     noTint();
     imageMode(CORNER);
-    image(matchImg, 0, 0, WIDTH, HEIGHT);
-    pop();
-  } else {
-    background(80, 0, 120);
-    fill(255); textAlign(CENTER, CENTER); textSize(64);
-    text("MATCH (imagen no cargó)", WIDTH/2, HEIGHT/2);
+    image(imgMatch, 0, 0, WIDTH, HEIGHT);
+    imageMode(CENTER);
   }
-  return;
+
+  drawDebugOverlay();
 }
 
-// --- DEBUG OVERLAY ---
-push();
-noStroke();
-fill(255);
-textAlign(LEFT, TOP);
-textSize(36);
-const cardName = cards[currentIndex]?.data?.name || "-";
-text(`state:${state}  idx:${currentIndex}  card:${cardName}`, 24, 24);
-pop();
-
+function drawDebugOverlay() {
+  push();
+  resetMatrix();
+  const hasCard = Boolean(activeCard);
+  const name = hasCard ? (activeCard.data.name || "-") : "-";
+  const indexText = hasCard ? currentCardIndex : "-";
+  fill(255);
+  textAlign(LEFT, TOP);
+  text(`state: ${currentState}\nindex: ${indexText}\nname: ${name}`, 24, 24);
+  pop();
 }
 
-// ====== INPUT (SOLO SWIPE) ======
-// Touch
-function touchStarted(){
-  if (!touches.length) return false;
-  const p = toCanvas(touches[0].clientX, touches[0].clientY);
-
-  if (state === STATES.BEGIN) { state = STATES.PLAY1; return false; }
-
-  if (state === STATES.MATCH) { matchSwipeX0 = p.x; return false; }
-
-  // PLAY1/PLAY2: comienza drag de la card
-  cards[currentIndex]?.press(p.x, p.y);
-  return false;
+function startPlay1() {
+  currentState = STATES.PLAY1;
+  deck = [initialProfiles[0], initialProfiles[1], initialProfiles[2]];
+  currentCardIndex = 0;
+  activeCard = new Card(deck[currentCardIndex]);
+  pendingStateChange = null;
 }
-function touchMoved(){
-  if (!touches.length) return false;
-  const p = toCanvas(touches[0].clientX, touches[0].clientY);
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) {
-    cards[currentIndex]?.drag(p.x, p.y);
+
+function startPlay2() {
+  currentState = STATES.PLAY2;
+  deck = [initialProfiles[0], initialProfiles[1]];
+  currentCardIndex = 0;
+  activeCard = new Card(deck[currentCardIndex]);
+  pendingStateChange = null;
+}
+
+function enterMatch() {
+  currentState = STATES.MATCH;
+  activeCard = null;
+  matchSwipeActive = false;
+  matchSwipeStartX = 0;
+}
+
+function exitMatch() {
+  lauraMatched = true;
+  startPlay2();
+}
+
+function handleFinishedCard() {
+  if (pendingStateChange === STATES.MATCH) {
+    pendingStateChange = null;
+    enterMatch();
+    return;
   }
-  return false;
+  if (currentState === STATES.PLAY1 || currentState === STATES.PLAY2) {
+    advanceToNextCard();
+  }
 }
-function touchEnded(){
-  if (state === STATES.MATCH) {
-    // salir sólo si hubo swipe-right (≥ 120 px)
-    if (matchSwipeX0 != null && _lastPointer) {
-      const p = toCanvas(_lastPointer.clientX, _lastPointer.clientY);
-      if (p.x - matchSwipeX0 >= 120) exitMatch();
+
+function advanceToNextCard() {
+  if (!deck || deck.length === 0) {
+    activeCard = null;
+    return;
+  }
+  currentCardIndex = (currentCardIndex + 1) % deck.length;
+  activeCard = new Card(deck[currentCardIndex]);
+}
+
+function isLauraCard(data) {
+  if (!data) return false;
+  if (data.isLaura === true) return true;
+  if (data.img === imgLauren) return true;
+  const name = (data.name || "").toLowerCase();
+  return name.includes("laur");
+}
+
+function handlePointerDown(x, y) {
+  lastPointerX = x;
+  lastPointerY = y;
+
+  if (currentState === STATES.BEGIN) {
+    lauraMatched = false;
+    startPlay1();
+    return;
+  }
+
+  if (currentState === STATES.MATCH) {
+    matchSwipeActive = true;
+    matchSwipeStartX = x;
+    return;
+  }
+
+  if ((currentState === STATES.PLAY1 || currentState === STATES.PLAY2) && activeCard && activeCard.canInteract()) {
+    activeCard.startDrag(x, y);
+  }
+}
+
+function handlePointerMove(x, y) {
+  lastPointerX = x;
+  lastPointerY = y;
+
+  if ((currentState === STATES.PLAY1 || currentState === STATES.PLAY2) && activeCard) {
+    activeCard.drag(x, y);
+  }
+}
+
+function handlePointerUp(x, y) {
+  lastPointerX = x;
+  lastPointerY = y;
+
+  if (currentState === STATES.MATCH) {
+    if (matchSwipeActive) {
+      const dx = x - matchSwipeStartX;
+      if (dx >= 120) {
+        exitMatch();
+      }
+      matchSwipeActive = false;
+      matchSwipeStartX = 0;
     }
-    matchSwipeX0 = null;
-    return false;
+    return;
   }
 
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) {
-    cards[currentIndex]?.release();
-  }
-  return false;
-}
-
-// Mouse (desktop) — drag para swipe; sin clicks de atajo
-let _lastPointer = null;
-function mousePressed(e){
-  _lastPointer = e;
-  const p = toCanvas(e.clientX, e.clientY);
-  if (state === STATES.BEGIN) { state = STATES.PLAY1; return false; }
-  if (state === STATES.MATCH) { matchSwipeX0 = p.x; return false; }
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) cards[currentIndex]?.press(p.x, p.y);
-  return false;
-}
-function mouseDragged(e){
-  _lastPointer = e;
-  const p = toCanvas(e.clientX, e.clientY);
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) cards[currentIndex]?.drag(p.x, p.y);
-  return false;
-}
-function mouseReleased(e){
-  _lastPointer = e;
-  if (state === STATES.MATCH) {
-    const p0 = matchSwipeX0;
-    if (p0 != null) {
-      const p = toCanvas(e.clientX, e.clientY);
-      if (p.x - p0 >= 120) exitMatch(); // swipe derecha
+  if ((currentState === STATES.PLAY1 || currentState === STATES.PLAY2) && activeCard) {
+    const outcome = activeCard.release();
+    if (outcome === "like" && currentState === STATES.PLAY1 && !lauraMatched && isLauraCard(activeCard.data)) {
+      pendingStateChange = STATES.MATCH;
     }
-    matchSwipeX0 = null;
-    return false;
   }
-  if (state === STATES.PLAY1 || state === STATES.PLAY2) cards[currentIndex]?.release();
+}
+
+function touchStarted() {
+  if (!touches.length) return false;
+  touchInProgress = true;
+  const t = touches[0];
+  const p = getCanvasCoords(t.clientX, t.clientY);
+  handlePointerDown(p.x, p.y);
   return false;
 }
 
-function exitMatch(){
-  if (!lauraMatched) {
-    // primer match (Lauren) → pasar a nivel 2
-    lauraMatched = true;
-    profiles = profiles.filter(p => !p.isLaura); // quitar Lauren
-    rebuild();
-    state = STATES.PLAY2;
-  } else {
-    // (por si en el futuro hubiera más matches) — ahora no se usa.
-    state = STATES.PLAY2;
-  }
+function touchMoved() {
+  if (!touches.length) return false;
+  const t = touches[0];
+  const p = getCanvasCoords(t.clientX, t.clientY);
+  handlePointerMove(p.x, p.y);
+  return false;
 }
 
-// ====== CARD ======
-class Card{
-  constructor(data){
-    this.data = data;        // { name, img, isLaura }
-    this.img  = data.img;
+function touchEnded() {
+  const t = touches.length ? touches[0] : null;
+  if (t) {
+    const p = getCanvasCoords(t.clientX, t.clientY);
+    handlePointerUp(p.x, p.y);
+  } else {
+    handlePointerUp(lastPointerX, lastPointerY);
+  }
+  touchInProgress = touches.length > 0;
+  return false;
+}
 
-    this.x = WIDTH/2;
-    this.y = HEIGHT/2;
-    this.rot = 0;
+function mousePressed(event) {
+  if (touchInProgress) return false;
+  const p = getCanvasCoords(event.clientX, event.clientY);
+  handlePointerDown(p.x, p.y);
+  return false;
+}
 
+function mouseDragged(event) {
+  if (touchInProgress) return false;
+  const p = getCanvasCoords(event.clientX, event.clientY);
+  handlePointerMove(p.x, p.y);
+  return false;
+}
+
+function mouseReleased(event) {
+  if (touchInProgress) return false;
+  const p = getCanvasCoords(event.clientX, event.clientY);
+  handlePointerUp(p.x, p.y);
+  return false;
+}
+
+function getCanvasCoords(clientX, clientY) {
+  const rect = canvas.elt.getBoundingClientRect();
+  const x = ((clientX - rect.left) / rect.width) * WIDTH;
+  const y = ((clientY - rect.top) / rect.height) * HEIGHT;
+  return { x, y };
+}
+
+class Card {
+  constructor(data) {
+    this.data = data;
+    this.homeX = WIDTH / 2;
+    this.homeY = HEIGHT / 2;
+    this.x = this.homeX;
+    this.y = this.homeY;
+    this.rotation = 0;
     this.dragging = false;
-    this.offX = 0;
-    this.offY = 0;
+    this.dragOffsetX = 0;
+    this.dragOffsetY = 0;
+    this.flying = false;
+    this.flyVelocityX = 0;
+    this.flyVelocityY = 0;
+    this.flyRotationSpeed = 0;
+    this.returning = false;
+    this.done = false;
   }
 
-  draw(){
+  canInteract() {
+    return !this.flying;
+  }
+
+  startDrag(px, py) {
+    if (!this.canInteract()) return;
+    this.dragging = true;
+    this.returning = false;
+    this.done = false;
+    this.dragOffsetX = px - this.x;
+    this.dragOffsetY = py - this.y;
+  }
+
+  drag(px, py) {
+    if (!this.dragging) return;
+    this.x = px - this.dragOffsetX;
+    this.y = py - this.dragOffsetY;
+    const dx = this.x - this.homeX;
+    this.rotation = constrain(dx / (WIDTH * 0.9), -0.3, 0.3);
+  }
+
+  release() {
+    if (!this.dragging) return "none";
+    this.dragging = false;
+    const dx = this.x - this.homeX;
+    const threshold = WIDTH * 0.25;
+    if (dx > threshold) {
+      this.startFlyOut("right");
+      return "like";
+    }
+    if (dx < -threshold) {
+      this.startFlyOut("left");
+      return "dislike";
+    }
+    this.startReturn();
+    return "none";
+  }
+
+  startReturn() {
+    this.returning = true;
+    this.done = false;
+  }
+
+  startFlyOut(direction) {
+    this.flying = true;
+    this.returning = false;
+    this.done = false;
+    const dir = direction === "right" ? 1 : -1;
+    this.flyVelocityX = dir * 55;
+    this.flyVelocityY = (this.y - this.homeY) * 0.08 + dir * 6;
+    this.flyRotationSpeed = dir * 0.08;
+  }
+
+  update() {
+    if (this.dragging) {
+      return;
+    }
+    if (this.flying) {
+      this.x += this.flyVelocityX;
+      this.y += this.flyVelocityY;
+      this.rotation += this.flyRotationSpeed;
+      if (this.x > WIDTH * 1.6 || this.x < -WIDTH * 0.6) {
+        this.flying = false;
+        this.done = true;
+      }
+      return;
+    }
+    if (this.returning) {
+      this.x = lerp(this.x, this.homeX, 0.25);
+      this.y = lerp(this.y, this.homeY, 0.25);
+      this.rotation = lerp(this.rotation, 0, 0.2);
+      if (abs(this.x - this.homeX) < 0.5 && abs(this.y - this.homeY) < 0.5 && abs(this.rotation) < 0.01) {
+        this.x = this.homeX;
+        this.y = this.homeY;
+        this.rotation = 0;
+        this.returning = false;
+      }
+      return;
+    }
+    this.x = lerp(this.x, this.homeX, 0.1);
+    this.y = lerp(this.y, this.homeY, 0.1);
+    this.rotation = lerp(this.rotation, 0, 0.1);
+  }
+
+  draw() {
+    if (!this.data || !this.data.img) return;
     push();
     translate(this.x, this.y);
-    rotate(radians(this.rot));
-    drawImageCover(this.img, 0, 0, WIDTH, HEIGHT);
+    rotate(this.rotation);
+    drawImageCover(this.data.img, 0, 0, WIDTH * 1.08, HEIGHT * 1.08);
     pop();
   }
 
-  _inside(px,py){
-    const dx = px - this.x, dy = py - this.y;
-    const r  = radians(-this.rot);
-    const rx = dx * cos(r) - dy * sin(r);
-    const ry = dx * sin(r) + dy * cos(r);
-    return abs(rx) <= WIDTH/2 && abs(ry) <= HEIGHT/2;
-  }
-
-  press(px,py){
-    if (this._inside(px,py)) {
-      this.dragging = true;
-      this.offX = px - this.x;
-      this.offY = py - this.y;
-    }
-  }
-
-  drag(px,py){
-    if (!this.dragging) return;
-    this.x = px - this.offX;
-    this.y = py - this.offY;
-    this.rot = map(this.x - WIDTH/2, -220, 220, -12, 12, true);
-  }
-
-  release(){
-    if (!this.dragging) return;
-    this.dragging = false;
-
-    const dx = this.x - WIDTH/2;
-    const th = WIDTH * 0.25;
-
-    if (dx > th) {
-  // LIKE (derecha)
-  this._flyOut(30);
-
-  // --- detección robusta de Lauren ---
-  const likedLaura =
-      (this.data.isLaura === true) ||
-      (this.img === imgLauren) ||
-      ((this.data.name || "").toLowerCase().includes("laur"));
-
-  if (state === STATES.PLAY1) {
-    if (likedLaura && !lauraMatched) {
-      console.log("→ ENTRO A MATCH (PLAY1, Lauren)");
-      state = STATES.MATCH;
-    } else {
-      currentIndex++;
-    }
-  } else if (state === STATES.PLAY2) {
-    // Nivel 2: NUNCA hay match — sólo avanzar
-    currentIndex++;
+  isFinished() {
+    return this.done;
   }
 }
 
-    else if (dx < -th) {
-  this._flyOut(-30);
-  currentIndex++;
-} else {
-  this._snapBack();
-}
+function drawImageCover(img, cx, cy, w, h) {
+  if (!img) return;
+  const imgRatio = img.width / img.height;
+  const destRatio = w / h;
+  let sw;
+  let sh;
+  if (imgRatio > destRatio) {
+    sh = img.height;
+    sw = sh * destRatio;
+  } else {
+    sw = img.width;
+    sh = sw / destRatio;
   }
-
-  _flyOut(d){
-    const s=this;
-    const t=setInterval(()=>{
-      s.x += d;
-      s.rot += d * 0.10;
-      if (s.x < -WIDTH || s.x > WIDTH*2) clearInterval(t);
-    },16);
-  }
-
-  _snapBack(){
-    const s=this;
-    const t=setInterval(()=>{
-      s.x = lerp(s.x, WIDTH/2, 0.22);
-      s.y = lerp(s.y, HEIGHT/2, 0.22);
-      s.rot *= 0.78;
-      if (abs(s.x-WIDTH/2)<0.6 && abs(s.y-HEIGHT/2)<0.6 && abs(s.rot)<0.25){
-        clearInterval(t); s.x=WIDTH/2; s.y=HEIGHT/2; s.rot=0;
-      }
-    },16);
-  }
-}
-
-// ====== UTIL ======
-function drawImageCover(img,cx,cy,w,h){
-  if(!img) return;
-  const iw=img.width, ih=img.height, tr=w/h, ir=iw/ih;
-  let sw,sh; if(ir>tr){ sh=ih; sw=ih*tr; } else { sw=iw; sh=iw/tr; }
-  const sx=(iw-sw)/2, sy=(ih-sh)/2;
+  const sx = (img.width - sw) * 0.5;
+  const sy = (img.height - sh) * 0.5;
   imageMode(CENTER);
   image(img, cx, cy, w, h, sx, sy, sw, sh);
 }
