@@ -19,13 +19,15 @@ const HEAD = {
   height: 220,  // alto visible del header (recorte)
   offsetX: 0,   // corrimiento horizontal (+ derecha / - izquierda)
 };
+
+// === Posiciones del form (desktop) ===
 const FORM = {
-  centerX: -550,  // 440 / 2 → centrado
-  top: 400,      // primer input, justo debajo del logo
-  gap: 70,       // separación entre inputs
-  width: 280,    // ancho razonable para que no toque bordes
-  btnY: 700,     // botón más abajo
-  btnW: 200      // ancho del botón
+  centerX: WIDTH/2, // centrado real
+  top: 400,
+  gap: 70,
+  width: 280,
+  btnY: 700,
+  btnW: 200
 };
 
 const STATES = {
@@ -42,8 +44,8 @@ const STATES = {
 };
 
 const LEAD_STORAGE_KEY = "leadData";
-const SWIPE_THRESHOLD = WIDTH * (isMobileDevice() ? 0.18 : 0.25);;
-const DEFAULT_LEVEL_TIMER = 20;
+let SWIPE_THRESHOLD = WIDTH * 0.25; // se recalcula en setup() para mobile
+const DEFAULT_LEVEL_TIMER = 45;
 const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbzlK0quklwpJsXgjsAi76Sb67ZLTaMe6UdryKCfXTuuJ8-eWMGe3OfHAYRxFUZaZHc-/exec";
 
 /* ---------- Assets ---------- */
@@ -71,24 +73,6 @@ let SFX = {
 };
 let audioPrimed = false;
 let musicStarted = false;
-// ---- Audio shims/guards (por si p5.sound no cargó aún) ----
-const HAS_P5_SOUND =
-  typeof window !== 'undefined' &&
-  typeof window.masterVolume === 'function' &&
-  typeof window.getAudioContext === 'function';
-
-function safeMasterVolume(v){
-  if (typeof window.masterVolume === 'function') window.masterVolume(v);
-}
-
-function safeSoundFormats(){
-  if (typeof window.soundFormats === 'function') window.soundFormats.apply(null, arguments);
-}
-
-function safeLoadSound(path){
-  return (typeof window.loadSound === 'function') ? loadSound(path) : null;
-}
-
 
 function ensureAudioContext(){
   if (audioPrimed) return;
@@ -164,7 +148,7 @@ let activeCard = null;
 let timerSeconds = DEFAULT_LEVEL_TIMER;
 let timerRunning = false;
 let lastTimerUpdate = 0;
-const TIMER_POS = { x: WIDTH/2, y: 20 };
+const TIMER_POS = { x: WIDTH/2, y: 60 };
 
 /* ---------- Lead Desktop (1 pantalla: 4 inputs + botón) ---------- */
 let storedLeadData = null;
@@ -185,8 +169,6 @@ let pointerDownY = HEIGHT/2;
    ===================== */
 function preload() {
   imgBegin = loadImage("BEGIN.png");
-
-  // Usamos el headline de tu lead anterior (podés cambiar por otra, p.ej. LEAD_HEAD.png)
   imgLeadHeader = loadImage("LEAD_G 1.png");
 
   tutorialImages = [ loadImage("TUTORIAL_L1b.png"), loadImage("TUTORIAL_L1c.png") ];
@@ -201,13 +183,13 @@ function preload() {
   });
 
   // ---------- AUDIO ----------
-  safeSoundFormats('mp3','wav','ogg');
-SFX.music   = safeLoadSound('music.wav');
-SFX.btn     = safeLoadSound('Button.wav');
-SFX.like    = safeLoadSound('like.wav');
-SFX.dislike = safeLoadSound('dislike.mp3');
-SFX.match12 = safeLoadSound('match.wav');
-SFX.match3  = safeLoadSound('matchl3.mp3');
+  soundFormats('mp3','wav','ogg');
+  SFX.music   = loadSound('music.wav');
+  SFX.btn     = loadSound('Button.wav');
+  SFX.like    = loadSound('like.wav');
+  SFX.dislike = loadSound('dislike.mp3');
+  SFX.match12 = loadSound('match.wav');
+  SFX.match3  = loadSound('matchl3.mp3');
 }
 
 /* =====================
@@ -231,13 +213,16 @@ function setup() {
   noStroke();
   fitCanvasCSS();
 
+  // Umbral de swipe más amable en mobile
+  SWIPE_THRESHOLD = WIDTH * (isMobileDevice() ? 0.18 : 0.25);
+
   levelProgress = LEVELS.map(() => ({ matched:false }));
   currentState = STATES.BEGIN;
 
   purgeLeadDom(); // limpieza por si el preview deja restos
 
   // AUDIO init
-  safeMasterVolume(MASTER_GAIN);
+  masterVolume(MASTER_GAIN);
 }
 
 function windowResized(){ fitCanvasCSS(); positionLeadUI(); }
@@ -302,7 +287,7 @@ function drawLeadScreen(){
   imageMode(CENTER);
   image(
     imgLeadHeader,
-    WIDTH/2 + HEAD.offsetX, HEAD_TOP,   // <- podés mover X con offsetX
+    WIDTH/2 + HEAD.offsetX, HEAD_TOP,
     WIDTH, HEAD_H,
     0, 0, imgLeadHeader.width, cropH
   );
@@ -427,18 +412,15 @@ function positionLeadUI(){
   if (!canvas) return;
   const r = canvas.elt.getBoundingClientRect();
 
-  // helpers para convertir coords de canvas -> pantalla
   const px = (x) => r.left + (x / WIDTH)  * r.width;
   const py = (y) => r.top  + (y / HEIGHT) * r.height;
   const pw = (w) => (w / WIDTH) * r.width;
 
-  // centramos el bloque por su centro (robusto en cualquier escala)
   const inputW = FORM.width;
-  const leftX  = FORM.centerX - inputW/2;   // alineado al centro
+  const leftX  = FORM.centerX - inputW/2;
   const xPx    = px(leftX);
   const wPx    = pw(inputW);
 
-  // posiciones Y
   const y1 = FORM.top;
   const y2 = y1 + FORM.gap;
   const y3 = y2 + FORM.gap;
@@ -465,7 +447,6 @@ function positionLeadUI(){
   }
 }
 
-
 function onLeadSubmit(){
   if (leadSubmitting) return;
   const trim = s => (s||"").trim();
@@ -480,7 +461,7 @@ function onLeadSubmit(){
   const mark = (el, bad) => { if (el) el.style.borderBottomColor = bad ? "#ff6060" : "#ffffff"; };
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(leadData.email.toLowerCase());
-  const phoneOk = /^\+?\d[\d\s\-()]{5,}$/.test(leadData.phone);
+  const phoneOk = /^\+?\d[\d\s\-()]{5,}$/.test(leadData.phone||"");
 
   mark(elFirst, !leadData.firstName);
   mark(elLast,  !leadData.lastName);
@@ -669,15 +650,6 @@ function drawTimer(){
    ===================== */
 function handlePointerDown(x, y){
   ensureAudioContext(); // desbloquea audio al primer toque
-
-  // 🔊 arranca música en el primer toque del usuario y queda en loop
-  if (!musicStarted && SFX.music) {
-    SFX.music.setLoop(true);
-    SFX.music.setVolume(MUSIC_GAIN);
-    SFX.music.play();
-    musicStarted = true;
-  }
-
   lastPointerX=x; lastPointerY=y; pointerDownX=x; pointerDownY=y;
 
   if (currentState === STATES.BEGIN) {
@@ -717,7 +689,15 @@ function handlePointerUp(x, y){
   }
 
   if (isPlayState(currentState) && activeCard) {
-    const outcome = activeCard.computeOutcome();
+    let outcome = activeCard.computeOutcome();
+
+    // Snap de umbral en mobile (si quedaste muy cerca decide por vos)
+    if (outcome === "none" && isMobileDevice()) {
+      const dx = activeCard.x - activeCard.homeX;
+      if (dx <= -WIDTH * 0.18) outcome = "like";
+      else if (dx >= WIDTH * 0.18) outcome = "dislike";
+    }
+
     if (outcome === "like") {
       // SONIDO swipe izquierda (LIKE)
       playSfx('like');
@@ -732,28 +712,6 @@ function handlePointerUp(x, y){
       // SONIDO swipe derecha (DISLIKE)
       playSfx('dislike');
     }
-     let outcome = activeCard.computeOutcome();
-
-// si quedaste muy cerca del umbral en mobile, decide por vos
-if (outcome === "none" && isMobileDevice()) {
-  const dx = activeCard.x - activeCard.homeX;
-  if (dx <= -WIDTH * 0.18) outcome = "like";
-  else if (dx >= WIDTH * 0.18) outcome = "dislike";
-}
-
-if (outcome === "like") {
-  playSfx('like');
-  const specId = LEVELS[currentLevelIndex].specialId;
-  if (activeCard.data && activeCard.data.id === specId && !levelProgress[currentLevelIndex].matched) {
-    activeCard.cancelForImmediateMatch();
-    enterMatch(currentLevelIndex);
-    return;
-  }
-} else if (outcome === "dislike") {
-  playSfx('dislike');
-}
-
-activeCard.release(outcome);
     activeCard.release(outcome);
   }
 }
@@ -765,6 +723,7 @@ function mouseReleased(e){ if (touchInProgress) return false; const p=getCanvasC
 function touchStarted(){ if (!touches.length) return false; touchInProgress=true; const t=touches[0]; const p=getCanvasCoords(t.clientX,t.clientY); handlePointerDown(p.x,p.y); return false; }
 function touchMoved(){ if (!touches.length) return false; const t=touches[0]; const p=getCanvasCoords(t.clientX,t.clientY); handlePointerMove(p.x,p.y); return false; }
 function touchEnded(){ const t=touches.length?touches[0]:null; if (t){ const p=getCanvasCoords(t.clientX,t.clientY); handlePointerUp(p.x,p.y); } else { handlePointerUp(lastPointerX,lastPointerY); } touchInProgress=touches.length>0; return false; }
+function touchCanceled(){ handlePointerUp(lastPointerX,lastPointerY); return false; }
 
 function getCanvasCoords(clientX, clientY){
   const r = canvas.elt.getBoundingClientRect();
@@ -830,47 +789,10 @@ class Card {
     this.flyVelocityX = 0;
     this.flyVelocityY = 0;
     this.flyRotationSpeed = 0;
-    this.returning = true;
-  this.done = false;
-  this._snapFrames = 0;   // contador de seguridad
-}
-update(){
-  if (this.dragging) return;
-
-  if (this.flying){
-    this.x += this.flyVelocityX;
-    this.y += this.flyVelocityY;
-    this.rotation += this.flyRotationSpeed;
-    if (this.x > WIDTH*1.6 || this.x < -WIDTH*0.6) {
-      this.flying = false; this.done = true;
-    }
-    return;
+    this.returning = false;
+    this.done = false;
+    this._snapFrames = 0;
   }
-
-  if (this.returning){
-    // easing de vuelta
-    this.x = lerp(this.x, this.homeX, 0.25);
-    this.y = lerp(this.y, this.homeY, 0.25);
-    this.rotation = lerp(this.rotation, 0, 0.25);
-
-    this._snapFrames = (this._snapFrames||0) + 1;
-
-    // condición de llegada O forzado por timeout (~12 frames ≈ 200ms a 60fps)
-    const arrived = (abs(this.x-this.homeX) < 0.8 && abs(this.y-this.homeY) < 0.8 && abs(this.rotation) < 0.02);
-    const timeout = this._snapFrames > 18;
-
-    if (arrived || timeout){
-      this.x = this.homeX; this.y = this.homeY; this.rotation = 0;
-      this.returning = false;
-    }
-    return;
-  }
-
-  // “reposo” en casa por si algo quedó levemente corrido
-  this.x = lerp(this.x, this.homeX, 0.08);
-  this.y = lerp(this.y, this.homeY, 0.08);
-  this.rotation = lerp(this.rotation, 0, 0.08);
-}
   canInteract(){ return !this.flying; }
   startDrag(px, py){
     if (!this.canInteract()) return;
@@ -902,7 +824,7 @@ update(){
     this.dragging=false; this.flying=false; this.returning=false;
     this.done=true; this.x=this.homeX; this.y=this.homeY; this.rotation=0;
   }
-  startReturn(){ this.returning = true; this.done = false; }
+  startReturn(){ this.returning = true; this.done = false; this._snapFrames = 0; }
   startFlyOut(direction){
     this.flying = true; this.returning = false; this.done = false;
     const dir = direction === "right" ? 1 : -1;
@@ -912,6 +834,7 @@ update(){
   }
   update(){
     if (this.dragging) return;
+
     if (this.flying){
       this.x += this.flyVelocityX;
       this.y += this.flyVelocityY;
@@ -921,15 +844,23 @@ update(){
       }
       return;
     }
+
     if (this.returning){
-      this.x = lerp(this.x, this.homeX, 0.22);
-      this.y = lerp(this.y, this.homeY, 0.22);
-      this.rotation = lerp(this.rotation, 0, 0.22);
-      if (abs(this.x-this.homeX)<0.5 && abs(this.y-this.homeY)<0.5 && abs(this.rotation)<0.01){
+      // easing de vuelta + timeout de seguridad
+      this.x = lerp(this.x, this.homeX, 0.25);
+      this.y = lerp(this.y, this.homeY, 0.25);
+      this.rotation = lerp(this.rotation, 0, 0.25);
+
+      this._snapFrames++;
+      const arrived = (abs(this.x-this.homeX) < 0.8 && abs(this.y-this.homeY) < 0.8 && abs(this.rotation) < 0.02);
+      const timeout = this._snapFrames > 18; // ~300ms
+      if (arrived || timeout){
         this.x=this.homeX; this.y=this.homeY; this.rotation=0; this.returning=false;
       }
       return;
     }
+
+    // reposo: asegura que nunca quede *ligeramente* corrido
     this.x = lerp(this.x, this.homeX, 0.08);
     this.y = lerp(this.y, this.homeY, 0.08);
     this.rotation = lerp(this.rotation, 0, 0.08);
@@ -951,3 +882,4 @@ function drawImageExact(img){
   imageMode(CENTER);
   image(img, WIDTH/2, HEIGHT/2);
 }
+
