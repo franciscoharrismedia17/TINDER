@@ -721,43 +721,24 @@ function handlePointerUp(x, y){
     return;
   }
   if (isPlayState(currentState) && activeCard) {
-  let outcome = activeCard.computeOutcome();
+    let outcome = activeCard.computeOutcome();
 
-  // --- Fallback para mobile: gesto corto/rápido decide ---
-  if (outcome === "none") {
-    const dx   = x - pointerDownX;
-    const dist = Math.abs(dx);
-    const dur  = max(0.001, (millis() - pointerDownTime) / 1000); // seg
-    const speed = dist / dur; // px/seg
+    // --- Fallback para mobile: gesto corto/rápido decide ---
+    if (outcome === "none" && (touchInProgress || isMobileDevice())) {
+      const dx   = x - pointerDownX;
+      const dist = Math.abs(dx);
+      const dur  = max(0.001, (millis() - pointerDownTime) / 1000); // seg
+      const speed = dist / dur; // px/seg
 
-    // si casi llegó al umbral o fue un "flick" rápido, forzamos decisión
-    if (dist > WIDTH * 0.14 || speed > 280) {
-      outcome = (dx < 0) ? "like" : "dislike";
+      // si casi llegó al umbral o fue un "flick" rápido, forzamos decisión
+      if (dist > WIDTH * 0.14 || speed > 280) {
+        outcome = (dx < 0) ? "like" : "dislike";
+      }
     }
-  }
-  // -------------------------------------------------------
+    // -------------------------------------------------------
 
-  if (outcome === "like") {
-    playSfx('like');
-    const specId = LEVELS[currentLevelIndex].specialId;
-    if (activeCard.data && activeCard.data.id === specId && !levelProgress[currentLevelIndex].matched) {
-      activeCard.cancelForImmediateMatch();
-      enterMatch(currentLevelIndex);
-      return;
-    }
-  } else if (outcome === "dislike") {
-    playSfx('dislike');
-  }
-  activeCard.release(outcome);
-}
-
-
-  if (isPlayState(currentState) && activeCard) {
-    const outcome = activeCard.computeOutcome();
     if (outcome === "like") {
-      // SONIDO swipe izquierda (LIKE)
       playSfx('like');
-
       const specId = LEVELS[currentLevelIndex].specialId;
       if (activeCard.data && activeCard.data.id === specId && !levelProgress[currentLevelIndex].matched) {
         activeCard.cancelForImmediateMatch();
@@ -765,10 +746,10 @@ function handlePointerUp(x, y){
         return;
       }
     } else if (outcome === "dislike") {
-      // SONIDO swipe derecha (DISLIKE)
       playSfx('dislike');
     }
     activeCard.release(outcome);
+    return;
   }
 }
 
