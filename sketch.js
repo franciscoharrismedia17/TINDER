@@ -42,7 +42,7 @@ const STATES = {
 };
 
 const LEAD_STORAGE_KEY = "leadData";
-const SWIPE_THRESHOLD = WIDTH * 0.25;
+const SWIPE_THRESHOLD = WIDTH * (isMobileDevice() ? 0.18 : 0.25);;
 const DEFAULT_LEVEL_TIMER = 20;
 const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbzlK0quklwpJsXgjsAi76Sb67ZLTaMe6UdryKCfXTuuJ8-eWMGe3OfHAYRxFUZaZHc-/exec";
 
@@ -732,6 +732,28 @@ function handlePointerUp(x, y){
       // SONIDO swipe derecha (DISLIKE)
       playSfx('dislike');
     }
+     let outcome = activeCard.computeOutcome();
+
+// si quedaste muy cerca del umbral en mobile, decide por vos
+if (outcome === "none" && isMobileDevice()) {
+  const dx = activeCard.x - activeCard.homeX;
+  if (dx <= -WIDTH * 0.18) outcome = "like";
+  else if (dx >= WIDTH * 0.18) outcome = "dislike";
+}
+
+if (outcome === "like") {
+  playSfx('like');
+  const specId = LEVELS[currentLevelIndex].specialId;
+  if (activeCard.data && activeCard.data.id === specId && !levelProgress[currentLevelIndex].matched) {
+    activeCard.cancelForImmediateMatch();
+    enterMatch(currentLevelIndex);
+    return;
+  }
+} else if (outcome === "dislike") {
+  playSfx('dislike');
+}
+
+activeCard.release(outcome);
     activeCard.release(outcome);
   }
 }
@@ -808,9 +830,47 @@ class Card {
     this.flyVelocityX = 0;
     this.flyVelocityY = 0;
     this.flyRotationSpeed = 0;
-    this.returning = false;
-    this.done = false;
+    this.returning = true;
+  this.done = false;
+  this._snapFrames = 0;   // contador de seguridad
+}
+update(){
+  if (this.dragging) return;
+
+  if (this.flying){
+    this.x += this.flyVelocityX;
+    this.y += this.flyVelocityY;
+    this.rotation += this.flyRotationSpeed;
+    if (this.x > WIDTH*1.6 || this.x < -WIDTH*0.6) {
+      this.flying = false; this.done = true;
+    }
+    return;
   }
+
+  if (this.returning){
+    // easing de vuelta
+    this.x = lerp(this.x, this.homeX, 0.25);
+    this.y = lerp(this.y, this.homeY, 0.25);
+    this.rotation = lerp(this.rotation, 0, 0.25);
+
+    this._snapFrames = (this._snapFrames||0) + 1;
+
+    // condición de llegada O forzado por timeout (~12 frames ≈ 200ms a 60fps)
+    const arrived = (abs(this.x-this.homeX) < 0.8 && abs(this.y-this.homeY) < 0.8 && abs(this.rotation) < 0.02);
+    const timeout = this._snapFrames > 18;
+
+    if (arrived || timeout){
+      this.x = this.homeX; this.y = this.homeY; this.rotation = 0;
+      this.returning = false;
+    }
+    return;
+  }
+
+  // “reposo” en casa por si algo quedó levemente corrido
+  this.x = lerp(this.x, this.homeX, 0.08);
+  this.y = lerp(this.y, this.homeY, 0.08);
+  this.rotation = lerp(this.rotation, 0, 0.08);
+}
   canInteract(){ return !this.flying; }
   startDrag(px, py){
     if (!this.canInteract()) return;
