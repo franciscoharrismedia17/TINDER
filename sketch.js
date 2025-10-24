@@ -168,6 +168,7 @@ let levelProgress = [];
 let currentState = STATES.BEGIN;
 let currentLevelIndex = 0;
 let currentMatchLevel = -1;
+let pendingBlockAfterMatch = false;
 
 /* ---------- Mazo ---------- */
 let deck = [];
@@ -848,9 +849,20 @@ function enterMatch(levelIndex){
 
 function exitMatch(){
   if (currentMatchLevel < 0) return;
-  levelProgress[currentMatchLevel].matched = true;
-  const next = currentMatchLevel + 1;
+  const finishedLevel = currentMatchLevel;
+  if (levelProgress[finishedLevel]) {
+    levelProgress[finishedLevel].matched = true;
+  }
   currentMatchLevel = -1;
+
+  if (pendingBlockAfterMatch && finishedLevel === 2) {
+    pendingBlockAfterMatch = false;
+    fullGameResetAfterBlock();
+    startLevel(0);
+    return;
+  }
+
+  const next = finishedLevel + 1;
 
   if (next < LEVELS.length) {
     startLevel(next);
@@ -986,13 +998,16 @@ function isLevel3Angela(){
 }
 
 function triggerBlock(){
+  if (pendingBlockAfterMatch) return;
   stopAllSfx();
+  stopMusic();
   musicStarted = false;
+  pendingBlockAfterMatch = true;
   if (activeCard) {
     activeCard.cancelForImmediateMatch();
   }
-  fullGameResetAfterBlock();
-  startLevel(0);
+  currentLevelIndex = 2;
+  enterMatch(2);
 }
 
 function fullGameResetAfterBlock(){
@@ -1017,6 +1032,7 @@ function fullGameResetAfterBlock(){
   pointerDownTime = 0;
 
   currentState = STATES.BEGIN;
+  pendingBlockAfterMatch = false;
 }
 
 function handlePointerDown(x, y){
