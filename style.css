@@ -1,2 +1,25 @@
-429: Too Many Requests
-For more on scraping GitHub and how it may affect your rights, please review our Terms of Service (https://docs.github.com/en/site-policy/github-terms/github-terms-of-service).
+html, body {
+  margin: 0;
+  padding: 0;
+}
+canvas {
+  display: block;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  #leadWrap.lead-mobile {
+    background: rgba(0, 0, 0, 0.72);
+    border-radius: 20px;
+  }
+
+  #leadWrap.lead-mobile input,
+  #leadWrap.lead-mobile button {
+    width: 100%;
+    max-width: none;
+    display: block;
+  }
+
+  #leadWrap.lead-mobile button {
+    margin-top: 8px;
+  }
+}
