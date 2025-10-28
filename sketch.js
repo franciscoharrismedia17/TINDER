@@ -4,7 +4,7 @@
    - Desktop: Lead Gen (UNA pantalla) con 4 campos + SUBMIT
    - Lead gen embebido tanto en desktop como en mobile cuando falta lead
    - Tutorial (2 pantallas) -> Niveles 1..3 (matches) -> vuelve a L1
-   - Swipe: IZQUIERDA = LIKE (umbral igual), DERECHA = DISLIKE
+   - Swipe: DERECHA = LIKE (umbral igual), IZQUIERDA = DISLIKE
    - Match: igual que card + tap tercio inferior para cerrar
    - Timer (solo PLAY): DS-DIGII.TTF, si llega a 0 => MATCH3
    - Audio: música loop, sfx de botón, swipes y matches (L1/L2 match.wav, L3 matchl3.mp3)
@@ -44,6 +44,10 @@ const STATES = {
 const LEAD_STORAGE_KEY = "leadData";
 let SWIPE_THRESHOLD = WIDTH * 0.25; // ← ahora let
 
+const SWIPE_LEFT  = -1; // DISLIKE
+const SWIPE_RIGHT =  1; // LIKE
+const SWIPE_NONE  =  0;
+
 const DEFAULT_LEVEL_TIMER = 45;
 const LEAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbwphoerOCsTZY8zO9sPrIm3jflR6dcPomfJCf1Xb3_gj90Ekzb1QOOEL0vHy5TdnoJO/exec";
 
@@ -65,8 +69,8 @@ let SFX_GAIN    = 0.9;
 let SFX = {
   music: null,     // music.wav (loop)
   btn: null,       // Button.wav
-  like: null,      // like.wav  (swipe izquierda)
-  dislike: null,   // dislike.mp3 (swipe derecha)
+  like: null,      // like.wav  (swipe derecha)
+  dislike: null,   // dislike.mp3 (swipe izquierda)
   match12: null,   // match.wav  (L1/L2)
   match3: null,    // matchl3.mp3 (L3) -> stop música
 };
@@ -120,6 +124,15 @@ function playSfx(key){
   snd.setVolume(SFX_GAIN);
   snd.play();
 }
+function stopAllSfx(){
+  Object.keys(SFX).forEach(key => {
+    const snd = SFX[key];
+    if (snd && typeof snd.stop === 'function') {
+      try { snd.stop(); } catch(e){}
+    }
+  });
+}
+
 
 // Exponer “knobs” para ajustar en runtime (consola: audio.setMusic(0.3), etc.)
 function setMasterGain(v){ MASTER_GAIN = constrain(v,0,1); masterVolume(MASTER_GAIN); }
@@ -155,6 +168,7 @@ let levelProgress = [];
 let currentState = STATES.BEGIN;
 let currentLevelIndex = 0;
 let currentMatchLevel = -1;
+let pendingBlockAfterMatch = false;
 
 /* ---------- Mazo ---------- */
 let deck = [];
@@ -835,9 +849,20 @@ function enterMatch(levelIndex){
 
 function exitMatch(){
   if (currentMatchLevel < 0) return;
-  levelProgress[currentMatchLevel].matched = true;
-  const next = currentMatchLevel + 1;
+  const finishedLevel = currentMatchLevel;
+  if (levelProgress[finishedLevel]) {
+    levelProgress[finishedLevel].matched = true;
+  }
   currentMatchLevel = -1;
+
+  if (pendingBlockAfterMatch && finishedLevel === 2) {
+    pendingBlockAfterMatch = false;
+    fullGameResetAfterBlock();
+    startLevel(0);
+    return;
+  }
+
+  const next = finishedLevel + 1;
 
   if (next < LEVELS.length) {
     startLevel(next);
@@ -921,6 +946,95 @@ function drawTimer(){
 /* =====================
    Input & Gestos
    ===================== */
+function onSwipe(dir){
+  if (!activeCard) return;
+  if (dir === SWIPE_RIGHT) { handleLike(); return; }
+  if (dir === SWIPE_LEFT)  { handleDislike(); return; }
+  handleNeutral();
+}
+
+function handleLike(){
+  if (!activeCard) return;
+  if (isLevel3Angela()) {
+    triggerBlock();
+    return;
+  }
+  playSfx('like');
+  const level = LEVELS[currentLevelIndex] || null;
+  const progress = levelProgress[currentLevelIndex] || null;
+  const specId = level ? level.specialId : null;
+  if (specId && activeCard.data && activeCard.data.id === specId && !(progress && progress.matched)) {
+    activeCard.cancelForImmediateMatch();
+    enterMatch(currentLevelIndex);
+    return;
+  }
+  activeCard.release(SWIPE_RIGHT);
+}
+
+function handleDislike(){
+  if (!activeCard) return;
+  if (isLevel3Angela()) {
+    triggerBlock();
+    return;
+  }
+  playSfx('dislike');
+  activeCard.release(SWIPE_LEFT);
+}
+
+function handleNeutral(){
+  if (!activeCard) return;
+  activeCard.release(SWIPE_NONE);
+}
+
+function isLevel3Angela(){
+  if (!activeCard || !activeCard.data) return false;
+  const level = LEVELS[currentLevelIndex] || null;
+  if (!level || level.specialId !== 'angela') return false;
+  if (currentState !== level.playState) return false;
+  const data = activeCard.data;
+  if (data.id === 'angela') return true;
+  if (data.matchKey === 'angela') return true;
+  return typeof data.name === 'string' && data.name.toUpperCase() === 'ANGELA';
+}
+
+function triggerBlock(){
+  if (pendingBlockAfterMatch) return;
+  stopAllSfx();
+  stopMusic();
+  musicStarted = false;
+  pendingBlockAfterMatch = true;
+  if (activeCard) {
+    activeCard.cancelForImmediateMatch();
+  }
+  currentLevelIndex = 2;
+  enterMatch(2);
+}
+
+function fullGameResetAfterBlock(){
+  stopTimer();
+  timerSeconds = DEFAULT_LEVEL_TIMER;
+  timerRunning = false;
+  lastTimerUpdate = millis();
+
+  levelProgress = LEVELS.map(() => ({ matched:false }));
+  currentLevelIndex = 0;
+  currentMatchLevel = -1;
+
+  deck = [];
+  currentCardIndex = 0;
+  activeCard = null;
+
+  touchInProgress = false;
+  lastPointerX = WIDTH/2;
+  lastPointerY = HEIGHT/2;
+  pointerDownX = WIDTH/2;
+  pointerDownY = HEIGHT/2;
+  pointerDownTime = 0;
+
+  currentState = STATES.BEGIN;
+  pendingBlockAfterMatch = false;
+}
+
 function handlePointerDown(x, y){
   ensureAudioContext(); // desbloquea audio al primer toque
 
@@ -971,10 +1085,10 @@ function handlePointerUp(x, y){
     return;
   }
   if (isPlayState(currentState) && activeCard) {
-    let outcome = activeCard.computeOutcome();
+    let dir = activeCard.computeOutcome();
 
     // --- Fallback para mobile: gesto corto/rápido decide ---
-    if (outcome === "none" && (touchInProgress || isMobileDevice())) {
+    if (dir === SWIPE_NONE && (touchInProgress || isMobileDevice())) {
       const dx   = x - pointerDownX;
       const dist = Math.abs(dx);
       const dur  = max(0.001, (millis() - pointerDownTime) / 1000); // seg
@@ -982,26 +1096,16 @@ function handlePointerUp(x, y){
 
       // si casi llegó al umbral o fue un "flick" rápido, forzamos decisión
       if (dist > WIDTH * 0.14 || speed > 280) {
-        outcome = (dx < 0) ? "like" : "dislike";
+        dir = (dx > 0) ? SWIPE_RIGHT : SWIPE_LEFT;
       }
     }
     // -------------------------------------------------------
 
-    if (outcome === "like") {
-      playSfx('like');
-      const specId = LEVELS[currentLevelIndex].specialId;
-      if (activeCard.data && activeCard.data.id === specId && !levelProgress[currentLevelIndex].matched) {
-        activeCard.cancelForImmediateMatch();
-        enterMatch(currentLevelIndex);
-        return;
-      }
-    } else if (outcome === "dislike") {
-      playSfx('dislike');
-    }
-    activeCard.release(outcome);
+    onSwipe(dir);
     return;
   }
 }
+
 
 /* p5 wrappers */
 function mousePressed(e){ if (touchInProgress) return false; const p=getCanvasCoords(e.clientX,e.clientY); handlePointerDown(p.x,p.y); return false; }
@@ -1140,17 +1244,19 @@ class Card {
   }
   computeOutcome(){
     const dx = this.x - this.homeX;
-    if (dx < -SWIPE_THRESHOLD) return "like";    // IZQUIERDA = LIKE
-    if (dx >  SWIPE_THRESHOLD) return "dislike"; // DERECHA   = DISLIKE
-    return "none";
+    if (dx >  SWIPE_THRESHOLD) return SWIPE_RIGHT; // DERECHA = LIKE
+    if (dx < -SWIPE_THRESHOLD) return SWIPE_LEFT;  // IZQUIERDA = DISLIKE
+    return SWIPE_NONE;
   }
   release(forced=null){
-    if (!this.dragging) return forced || "none";
+    const hasForced = typeof forced === 'number';
+    if (!this.dragging && !hasForced) return SWIPE_NONE;
     this.dragging = false;
-    const out = forced || this.computeOutcome();
-    if (out === "like")    { this.startFlyOut("left");  return "like"; }
-    if (out === "dislike") { this.startFlyOut("right"); return "dislike"; }
-    this.startReturn(); return "none";
+    const out = hasForced ? forced : this.computeOutcome();
+    if (out === SWIPE_RIGHT) { this.startFlyOut(SWIPE_RIGHT); return SWIPE_RIGHT; }
+    if (out === SWIPE_LEFT)  { this.startFlyOut(SWIPE_LEFT);  return SWIPE_LEFT; }
+    this.startReturn();
+    return SWIPE_NONE;
   }
   cancelForImmediateMatch(){
     this.dragging=false; this.flying=false; this.returning=false;
@@ -1159,7 +1265,7 @@ class Card {
   startReturn(){ this.returning = true; this.done = false; }
   startFlyOut(direction){
     this.flying = true; this.returning = false; this.done = false;
-    const dir = direction === "right" ? 1 : -1;
+    const dir = direction === SWIPE_RIGHT ? 1 : -1;
     this.flyVelocityX = dir * 55;
     this.flyVelocityY = (this.y - this.homeY) * 0.08 + dir * 6;
     this.flyRotationSpeed = dir * 0.08;
